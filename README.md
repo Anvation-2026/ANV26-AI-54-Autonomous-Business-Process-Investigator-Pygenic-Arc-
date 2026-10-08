@@ -74,15 +74,15 @@ The first investigation uses the RCA engine when no sufficiently similar
 history exists. After a human selects **Approve & save history** or
 **Modify & save**, the case is saved in the browser's `localStorage`. Uploaded
 files and review decisions are also stored there. Rejected recommendations are
-not stored. No MongoDB, ChromaDB, server database, or local history file is
-used.
+not stored. No MongoDB, ChromaDB, or server history database is used; the
+backend's separate ignored checkpoint file only stores graph execution state.
 
 The investigation is deterministic and uses only the files uploaded through
 the backend API. It does not invent a result when evidence is absent or
 non-numeric: the API returns `status: "insufficient_evidence"` instead.
 `backend\requirements.txt` lists optional integrations for a later deployment:
 FastAPI/Pydantic, Pandas/NumPy/scikit-learn, NetworkX, ChromaDB, Gemini,
-LangGraph, and MongoDB.
+LangGraph, LangChain Core/Google GenAI, and MongoDB.
 
 ## API flow
 
@@ -146,14 +146,30 @@ runs the same anomaly/evidence/Hybrid RCA pipeline, and exposes its state at
 `GET /api/monitor/status`. Invalid files remain visible as `last_error`; they
 are never converted into a successful diagnosis.
 
+## Backend agent architecture
+
+The backend runs a compiled, evidence-first graph in `backend\agents\`.
+`InvestigatorAgent`, `RCAAgent`, `SolutionPlannerAgent`, and
+`VerificationAgent` are independent classes connected by a shared,
+JSON-compatible `InvestigationState` and explicit agent-to-agent messages.
+`AgentPlanner` fixes the order and always ends at a human verification gate.
+Each node writes a durable checkpoint to `backend\checkpoints.json` (ignored
+by Git), while preserving the existing frontend response shape.
+
+`RCAAgent` exposes `rank_evidence_tool` to LangChain. With a Gemini key and the
+optional provider installed it attempts a temperature-zero, evidence-only tool
+call. Deterministic evidence ranking remains authoritative; if credentials,
+the provider, network, or tool call is unavailable, the agent records
+`deterministic_fallback` and returns the same strict result. No agent executes
+production remediation.
+
 ## Architecture decisions
 
 The deterministic anomaly, filtering, evidence scoring, conflict detection,
 ranking, and projected outcomes happen before any LLM integration. The current
 historical retrieval is a dependency-free keyword-similarity fallback; it is
 explicitly labeled in the API. Gemini embeddings + ChromaDB can replace that
-provider, and LangGraph can orchestrate the four named stages (Investigator,
-RCA, Solution Planner, Verification) without changing the frontend contract.
+provider without changing the frontend contract.
 
 Scores are labeled **Confidence / Evidence Score**, not scientifically
 calibrated probabilities. Projected outcomes are estimates from similar cases,

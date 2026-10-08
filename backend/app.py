@@ -23,11 +23,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from agents.graph import run_investigation_graph
+
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 INCOMING = ROOT / "incoming"
 INVESTIGATION_ID = "INV-2026-1008-001"
 BACKEND_VERSION = "2026.10.08-strict"
+CHECKPOINTS = ROOT / "checkpoints.json"
 REVIEWS: dict[str, dict] = {}
 UPLOADS: dict[str, dict] = {}
 MONITOR_STATE = {
@@ -279,7 +282,9 @@ def detect_anomaly() -> dict:
 def investigate() -> dict:
     if not UPLOADS:
         return {"id": INVESTIGATION_ID, "ready": False, "status": "insufficient_evidence", "uploads": [], "message": "Upload a CSV or JSON file to start the investigation."}
-    return uploaded_investigation()
+    # The legacy report shape remains the HTTP contract; the compiled agent
+    # graph enriches it with messages, planner steps, and durable checkpoints.
+    return run_investigation_graph(uploaded_investigation(), CHECKPOINTS)
     baseline = {
         "payment_failure_rate": 4.8,
         "timeout_rate": 1.0,

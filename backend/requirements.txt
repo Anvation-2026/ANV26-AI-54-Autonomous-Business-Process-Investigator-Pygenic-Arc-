@@ -5,6 +5,8 @@ fastapi
 uvicorn
 pydantic>=2
 langgraph
+langchain-core
+langchain-google-genai
 google-generativeai
 chromadb
 networkx
