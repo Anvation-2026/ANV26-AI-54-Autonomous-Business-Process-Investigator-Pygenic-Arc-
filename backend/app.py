@@ -135,9 +135,26 @@ def uploaded_investigation() -> dict:
             "supports": ["uploaded_data_pattern"],
         })
     causes = [
-        {"id": "data_pattern", "name": "Observed data pattern", "score": 72, "evidence_ids": [item["id"] for item in evidence[:3]], "explanation": f"The uploaded records show a {metric} range from {low:g} to {high:g}; this is the strongest measurable signal in the supplied data."},
-        {"id": "process_or_system", "name": "Process or system issue", "score": 51, "evidence_ids": [item["id"] for item in evidence], "explanation": "The files contain operational records, but no causal system logs were supplied to distinguish process, application, or provider causes."},
-        {"id": "data_quality", "name": "Data quality or sampling issue", "score": 34, "evidence_ids": [item["id"] for item in evidence], "explanation": "A broader baseline, timestamps, and status labels are needed to confirm whether the observed spread is an anomaly or normal variation."},
+        {"id": "data_pattern", "name": "Observed data pattern", "score": 72, "evidence_ids": [item["id"] for item in evidence[:3]], "explanation": f"The uploaded records show a {metric} range from {low:g} to {high:g}; this is the strongest measurable signal in the supplied data.", "agent": "Hybrid RCA Agent"},
+        {"id": "process_or_system", "name": "Process or system issue", "score": 51, "evidence_ids": [item["id"] for item in evidence], "explanation": "The files contain operational records, but no causal system logs were supplied to distinguish process, application, or provider causes.", "agent": "Hybrid RCA Agent"},
+        {"id": "data_quality", "name": "Data quality or sampling issue", "score": 34, "evidence_ids": [item["id"] for item in evidence], "explanation": "A broader baseline, timestamps, and status labels are needed to confirm whether the observed spread is an anomaly or normal variation.", "agent": "Hybrid RCA Agent"},
+    ]
+    anomaly_description = f"Uploaded data contains {len(records)} records and a {metric} range from {low:g} to {high:g}."
+    historical_cases = _cases()
+    query_terms = set(f"{metric} {anomaly_description}".lower().replace(",", " ").split())
+    historical_cases = sorted(
+        historical_cases,
+        key=lambda case: len(query_terms.intersection(set(json.dumps(case).lower().replace(",", " ").split()))),
+        reverse=True,
+    )[:3]
+    agents = [
+        {"name": "Anomaly Detection Agent", "input": "Uploaded numeric fields", "output": f"Compared {metric} values using mean, population standard deviation, and deviation score."},
+        {"name": "Evidence Collection Agent", "input": "Uploaded CSV/JSON records", "output": f"Collected {len(evidence)} source-level evidence records and linked them to uploaded files."},
+        {"name": "Conflict Analysis Agent", "input": "Evidence records", "output": f"Checked for contradictory signals; {len([item for item in evidence if item.get('conflict')])} explicit conflicts were found."},
+        {"name": "Hybrid RCA Agent", "input": "Anomaly + evidence + alternatives", "output": f"Ranked {len(causes)} plausible causes using evidence coverage and data limitations."},
+        {"name": "RAG Memory Agent", "input": "Current signal terms + backend historical_cases.json", "output": f"Retrieved {len(historical_cases)} closest historical records by token overlap."},
+        {"name": "Solution Planner Agent", "input": "Top cause + evidence limitations", "output": "Generated verification-first actions; no production remediation is executed."},
+        {"name": "Human Verification Gate", "input": "Ranked diagnosis + proposed actions", "output": "Waiting for explicit human approval, modification, or rejection."},
     ]
     return {
         "id": INVESTIGATION_ID,
@@ -146,11 +163,12 @@ def uploaded_investigation() -> dict:
         "selected_anomaly": None,
         "anomaly": {"id": "ANOM-UPLOAD", "metric": metric, "timestamp": datetime.now(timezone.utc).isoformat(), "baseline": round(low, 2), "current": round(high, 2), "deviation_percent": round(spread, 1), "anomaly_score": round(min(0.99, abs(spread) / 100), 2), "severity": "HIGH" if spread >= 20 else "MEDIUM", "description": f"Uploaded data contains {len(records)} records and a {metric} range from {low:g} to {high:g} (average {average:.2f})."},
         "baseline": {metric: round(low, 2)}, "current": {metric: round(high, 2)}, "evidence": evidence, "conflicts": [],
-        "causes": causes, "historical_cases": [], "history": {"source": "browser-uploaded data", "match_found": False, "mode": "fresh RCA investigation", "stored_cases": 0},
+        "causes": causes, "historical_cases": historical_cases, "history": {"source": "backend/data/historical_cases.json", "match_found": bool(historical_cases), "mode": "historical comparison" if historical_cases else "fresh RCA investigation", "stored_cases": len(_cases())},
         "uploads": [{"name": name, "type": item["type"], "records": item["records"]} for name, item in UPLOADS.items()],
         "solution": {"root_cause": causes[0]["name"], "plan": ["Add baseline and timestamp fields to the uploaded dataset.", "Validate the observed pattern against order, payment, and support records.", "Review the strongest evidence with an e-commerce operator.", "Re-run the investigation after the missing context is supplied."], "expected_outcome": {metric: {"current": f"{high:g}", "projected": "validated after baseline comparison"}}, "disclaimer": "This recommendation is based only on the uploaded files; no production action is executed."},
         "verification": {"status": "pending", "decision": None, "notes": "Human review is required."},
-        "method": {"agents": ["Investigator", "RCA", "Solution Planner", "Verification"], "ranking_label": "Confidence / Evidence Score (not calibrated probability)", "rag": "Browser-uploaded records only."},
+        "method": {"agents": [agent["name"] for agent in agents], "agent_details": agents, "ranking_label": "Confidence / Evidence Score (not calibrated probability)", "rag": "Backend historical_cases.json token-overlap retrieval; no invented matches."},
+        "pipeline": agents,
     }
 
 
