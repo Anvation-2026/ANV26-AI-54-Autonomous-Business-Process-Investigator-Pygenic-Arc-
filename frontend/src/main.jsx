@@ -273,6 +273,7 @@ function App() {
   const upload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    event.target.value = "";
     if (!/\.(csv|json|zip)$/i.test(file.name)) {
       setUploadStatus("Only CSV, JSON, and ZIP files are supported.");
       return;
@@ -298,8 +299,9 @@ function App() {
         try {
           const response = await fetch("/api/data/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: entry.name, content: entry.content }) });
           if (!response.ok) throw new Error((await response.json()).error || `Backend rejected ${entry.name}.`);
-        } catch {
-          throw new Error(`Backend rejected ${entry.name}; no local-only result was created.`);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "unknown upload error";
+          throw new Error(`Backend rejected ${entry.name}: ${detail}`);
         }
       }
       const names = new Set(added.map((item) => item.name));
