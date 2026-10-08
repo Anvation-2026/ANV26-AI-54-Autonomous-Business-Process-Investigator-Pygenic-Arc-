@@ -43,6 +43,7 @@ function App() {
     try {
       const health = await fetch("/api/health", { cache: "no-store" });
       if (!health.ok) throw new Error(`Backend health check failed (HTTP ${health.status}).`);
+      const healthData = await health.json();
       let response = await fetch("/api/investigate", { cache: "no-store" });
       let body = await response.text();
       if (!response.ok) throw new Error(`Investigation service returned HTTP ${response.status}.`);
@@ -61,13 +62,15 @@ function App() {
         setSelectedAnomalyState(highest);
         localStorage.setItem("pygenicArc.selectedAnomaly", JSON.stringify(highest));
       }
-      setData({ ...serverData, uploads: serverData.ready === false ? [] : uploads, storedUploads: uploads, browserHistory, historyCount: browserHistory.length });
+      setData({ ...serverData, monitor: healthData.monitor, uploads: serverData.ready === false ? [] : uploads, storedUploads: uploads, browserHistory, historyCount: browserHistory.length });
     } catch (error) {
       setLoadError(error.message || "The backend is unavailable. Start backend\\app.py and retry.");
     }
   };
   useEffect(() => {
     load();
+    const monitorRefresh = window.setInterval(load, 3000);
+    return () => window.clearInterval(monitorRefresh);
   }, []);
   useEffect(() => {
     const onHashChange = () => setView(window.location.hash.replace("#", "") || "overview");
@@ -364,7 +367,7 @@ function App() {
         </header>
         <UploadPanel data={data} onUpload={upload} onUsePrevious={usePreviousData} onDeletePrevious={deletePreviousData} selectedPreviousFiles={selectedPreviousFiles} setSelectedPreviousFiles={setSelectedPreviousFiles} status={uploadStatus} />
         {view === "history" ? <section id="history"><History data={data} /></section> : hasInvestigation ? <><section className="hero"><div><h2>Full e-commerce investigation</h2><p>Uploaded data is analyzed through anomaly detection, evidence scoring, Hybrid RCA, solution planning, human approval, PDF reporting, and the final causal graph.</p></div><div className="incident"><small>UPLOADED FILES</small><b>{data.uploads.length}</b><small>All stages active</small></div></section>
-          <InvestigationPipeline data={data} currentStage={pipelineStage} running={pipelineRunning} decision={decision} onRun={runPipeline} />
+          <div className="backend-monitor"><b>Backend monitor:</b> {data.monitor?.running ? "running" : "starting"} · watching <code>{data.monitor?.source || "backend/incoming"}</code> · last file: {data.monitor?.last_file || "none"}{data.monitor?.anomaly_detected ? " · anomaly detected" : ""}{data.monitor?.last_error ? ` · error: ${data.monitor.last_error.message}` : ""}</div><InvestigationPipeline data={data} currentStage={pipelineStage} running={pipelineRunning} decision={decision} onRun={runPipeline} />
           {view === "overview" && <section id="overview"><AnomalySelection data={data} selected={selectedAnomaly} onSelect={setSelectedAnomaly} /></section>}
           {view === "anomaly" && <section id="anomaly"><AnomalySelection data={data} selected={selectedAnomaly} onSelect={setSelectedAnomaly} /></section>}
           {view === "evidence" && <section id="evidence"><Evidence data={data} /></section>}

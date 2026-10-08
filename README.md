@@ -91,6 +91,7 @@ The standard endpoints are available:
 ```text
 GET  /api/anomaly/detect
 GET  /api/health
+GET  /api/monitor/status
 POST /api/data/upload
 POST /api/investigation/start
 GET  /api/investigation/{id}/evidence
@@ -136,6 +137,14 @@ Invoke-RestMethod http://localhost:8000/api/v1/diagnose `
 
 The endpoint does not execute remediation. If no telemetry has been uploaded,
 it returns `status: "insufficient_evidence"` and explains what data is needed.
+
+## Real-time local-folder monitor
+
+The backend continuously watches `backend\incoming\` every two seconds. Copy a
+new CSV or JSON file into that folder; the monitor validates it, ingests it,
+runs the same anomaly/evidence/Hybrid RCA pipeline, and exposes its state at
+`GET /api/monitor/status`. Invalid files remain visible as `last_error`; they
+are never converted into a successful diagnosis.
 
 ## Architecture decisions
 

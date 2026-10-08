@@ -12,6 +12,8 @@ import math
 import mimetypes
 import os
 import statistics
+import threading
+import time
 import uuid
 import urllib.error
 import urllib.parse
@@ -23,10 +25,21 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
+INCOMING = ROOT / "incoming"
 INVESTIGATION_ID = "INV-2026-1008-001"
 BACKEND_VERSION = "2026.10.08-strict"
 REVIEWS: dict[str, dict] = {}
 UPLOADS: dict[str, dict] = {}
+MONITOR_STATE = {
+    "running": False,
+    "source": str(INCOMING),
+    "files_seen": 0,
+    "last_file": None,
+    "last_event": None,
+    "last_error": None,
+    "anomaly_detected": False,
+    "last_checked_at": None,
+}
 
 
 def _load_env() -> None:
@@ -39,6 +52,77 @@ def _load_env() -> None:
 
 
 _load_env()
+INCOMING.mkdir(exist_ok=True)
+
+
+def ingest_upload(filename: str, content: str) -> dict:
+    if not filename or not isinstance(content, str) or not content.strip():
+        raise ValueError("filename and text content are required")
+    if not filename.lower().endswith((".csv", ".json")):
+        raise ValueError("Only CSV and JSON files are supported")
+    try:
+        parsed = json.loads(content) if filename.lower().endswith(".json") else content.splitlines()
+    except json.JSONDecodeError as error:
+        raise ValueError("The JSON file is invalid") from error
+    if filename.lower().endswith(".csv"):
+        import csv
+        from io import StringIO
+        rows = list(csv.DictReader(StringIO(content)))
+        if not rows or not rows[0]:
+            raise ValueError("CSV must contain a header row and at least one data row")
+        record_count = len(rows)
+        file_type = "CSV"
+    elif isinstance(parsed, list):
+        if not parsed or not all(isinstance(row, dict) for row in parsed):
+            raise ValueError("JSON must contain a non-empty array of objects")
+        record_count = len(parsed)
+        file_type = "JSON"
+    elif isinstance(parsed, dict):
+        record_count = 1
+        file_type = "JSON"
+    else:
+        raise ValueError("JSON must contain an object or an array of objects")
+    UPLOADS[filename] = {
+        "type": file_type,
+        "records": record_count,
+        "content": content,
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return {"accepted": True, "filename": filename, "type": file_type, "records": record_count}
+
+
+def monitor_loop() -> None:
+    seen: dict[str, int] = {}
+    MONITOR_STATE["running"] = True
+    while True:
+        try:
+            MONITOR_STATE["last_checked_at"] = datetime.now(timezone.utc).isoformat()
+            for path in INCOMING.iterdir():
+                if not path.is_file() or path.suffix.lower() not in (".csv", ".json"):
+                    continue
+                modified = path.stat().st_mtime_ns
+                if seen.get(path.name) == modified:
+                    continue
+                seen[path.name] = modified
+                try:
+                    result = ingest_upload(path.name, path.read_text(encoding="utf-8"))
+                    report = investigate()
+                    MONITOR_STATE.update({
+                        "files_seen": len(seen),
+                        "last_file": path.name,
+                        "last_event": {"type": "file_ingested", **result, "at": datetime.now(timezone.utc).isoformat()},
+                        "last_error": None,
+                        "anomaly_detected": bool(report.get("anomalies")),
+                    })
+                except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+                    MONITOR_STATE.update({
+                        "files_seen": len(seen),
+                        "last_file": path.name,
+                        "last_error": {"file": path.name, "message": str(error), "at": datetime.now(timezone.utc).isoformat()},
+                    })
+        except OSError as error:
+            MONITOR_STATE["last_error"] = {"message": str(error), "at": datetime.now(timezone.utc).isoformat()}
+        time.sleep(2)
 
 
 def pct_change(current: float, baseline: float) -> float:
@@ -361,7 +445,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/api/health":
-            self._send(200, {"ok": True, "service": "pygenic-arc-backend", "version": BACKEND_VERSION, "uploads": len(UPLOADS)})
+            self._send(200, {"ok": True, "service": "pygenic-arc-backend", "version": BACKEND_VERSION, "uploads": len(UPLOADS), "monitor": MONITOR_STATE})
+            return
+        if path == "/api/monitor/status":
+            self._send(200, MONITOR_STATE)
             return
         report = investigate()
         if path == "/api/investigate" or path == f"/api/investigation/{INVESTIGATION_ID}/report":
@@ -433,37 +520,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/data/upload":
             filename = str(body.get("filename", "")).strip()
             content = body.get("content", "")
-            if not filename or not isinstance(content, str) or not content.strip():
-                self._send(422, {"error": "filename and text content are required"})
-                return
-            if not filename.lower().endswith((".csv", ".json")):
-                self._send(422, {"error": "Only CSV and JSON files are supported"})
-                return
             try:
-                parsed = json.loads(content) if filename.lower().endswith(".json") else content.splitlines()
-            except json.JSONDecodeError:
-                self._send(422, {"error": "The JSON file is invalid"})
-                return
-            if filename.lower().endswith(".csv"):
-                import csv
-                from io import StringIO
-                rows = list(csv.DictReader(StringIO(content)))
-                if not rows or not rows[0]:
-                    self._send(422, {"error": "CSV must contain a header row and at least one data row"})
-                    return
-                records = len(rows)
-            elif isinstance(parsed, list):
-                if not parsed or not all(isinstance(row, dict) for row in parsed):
-                    self._send(422, {"error": "JSON must contain a non-empty array of objects"})
-                    return
-                records = len(parsed)
-            elif isinstance(parsed, dict):
-                records = 1
-            else:
-                self._send(422, {"error": "JSON must contain an object or an array of objects"})
-                return
-            UPLOADS[filename] = {"type": "JSON" if filename.lower().endswith(".json") else "CSV", "records": records, "content": content, "added_at": datetime.now(timezone.utc).isoformat()}
-            self._send(200, {"accepted": True, "filename": filename, "type": UPLOADS[filename]["type"], "records": records, "message": "File added to this local investigation context."})
+                result = ingest_upload(filename, content)
+                self._send(200, {**result, "message": "File added to this backend investigation context."})
+            except ValueError as error:
+                self._send(422, {"error": str(error)})
         else:
             self._send(404, {"error": "Not found"})
 
@@ -480,5 +541,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    threading.Thread(target=monitor_loop, daemon=True, name="incoming-monitor").start()
     print("Pygenic Arc running at http://localhost:8000")
     ThreadingHTTPServer(("localhost", 8000), Handler).serve_forever()
