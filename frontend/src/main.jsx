@@ -46,13 +46,15 @@ function App() {
       const healthData = await health.json();
       let response = await fetch("/api/investigate", { cache: "no-store" });
       let body = await response.text();
-      if (!response.ok) throw new Error(`Investigation service returned HTTP ${response.status}.`);
       if (!body.trim()) throw new Error("Investigation service returned an empty response.");
       let serverData;
       try {
         serverData = JSON.parse(body);
       } catch {
         throw new Error("Investigation service returned invalid JSON.");
+      }
+      if (!response.ok && response.status !== 422) {
+        throw new Error(serverData.error || serverData.message || `Investigation service returned HTTP ${response.status}.`);
       }
       if (serverData.ready === false) {
         setSelectedAnomalyState(null);
