@@ -1,0 +1,20 @@
+<div id="root"></div>
+<script>
+window.addEventListener("error", function (event) {
+  if (document.body.dataset.frontendError) return;
+  document.body.dataset.frontendError = "true";
+  var panel = document.createElement("div");
+  panel.style.cssText = "padding:40px;font:16px system-ui;color:#b42318;background:#fff5f5";
+  panel.innerHTML = "<b>Pygenic Arc could not load.</b><br>" + String(event.message || "Unknown frontend error");
+  document.body.appendChild(panel);
+});
+window.addEventListener("unhandledrejection", function (event) {
+  if (document.body.dataset.frontendError) return;
+  document.body.dataset.frontendError = "true";
+  var panel = document.createElement("div");
+  panel.style.cssText = "padding:40px;font:16px system-ui;color:#b42318;background:#fff5f5";
+  panel.innerHTML = "<b>Pygenic Arc could not load.</b><br>" + String(event.reason || "Unhandled frontend error");
+  document.body.appendChild(panel);
+});
+</script>
+<script type="module" src="/src/main.jsx"></script>

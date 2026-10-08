@@ -1,0 +1,5 @@
+ticket_id,timestamp,category,description,severity
+T-001,2026-10-08T12:05:00Z,checkout,Payment failed at checkout,high
+T-002,2026-10-08T12:06:00Z,checkout,Transaction timeout after clicking pay,high
+T-003,2026-10-08T12:08:00Z,checkout,Checkout failed but cart was retained,medium
+T-004,2026-10-08T12:09:00Z,checkout,Payment is taking too long,medium

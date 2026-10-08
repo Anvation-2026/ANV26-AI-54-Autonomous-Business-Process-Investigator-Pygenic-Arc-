@@ -1,0 +1,6 @@
+timestamp,phase,orders,order_completion_rate,profit,error_rate,processing_time,website_traffic,inventory_level
+2026-10-08T08:00:00Z,baseline,1000,94.6,42000,2.1,410,100,100
+2026-10-08T09:00:00Z,baseline,1010,95.1,42500,2.0,418,101,99
+2026-10-08T10:00:00Z,baseline,990,94.7,41900,2.2,421,99,101
+2026-10-08T11:00:00Z,baseline,1005,94.8,42200,2.1,421,100,100
+2026-10-08T12:00:00Z,incident,1002,62.0,30700,8.9,1680,101,99

@@ -1,0 +1,18 @@
+[
+  {
+    "case_id": "LOCAL-001",
+    "problem": "Order completion fell 34.6% from the historical baseline.",
+    "evidence": [
+      "Order completion fell from 94.8% to 62.0% (-34.6%).",
+      "Payment failures increased 42% over baseline.",
+      "Transaction timeout rate reached 4x normal.",
+      "Customer complaints about checkout increased 28%.",
+      "Website traffic remained normal (+1%), weakening a demand-side explanation."
+    ],
+    "root_cause": "Payment Gateway Latency",
+    "solution": "Inspect payment API latency by region and provider.",
+    "result": "Human-approved investigation stored for future comparison",
+    "decision": "approved",
+    "saved_at": "2026-10-08T07:46:07.585764+00:00"
+  }
+]

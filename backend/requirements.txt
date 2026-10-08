@@ -1,0 +1,11 @@
+pandas
+numpy
+scikit-learn
+fastapi
+uvicorn
+pydantic>=2
+langgraph
+google-generativeai
+chromadb
+networkx
+pymongo

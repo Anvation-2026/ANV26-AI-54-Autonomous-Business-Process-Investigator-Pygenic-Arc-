@@ -1,0 +1,26 @@
+[
+  {
+    "case_id": "INC014",
+    "problem": "Order completion decreased by 31%",
+    "evidence": ["Payment failures increased", "Timeout rate increased", "Traffic normal"],
+    "root_cause": "Payment API latency",
+    "solution": "Optimize timeout handling and fallback authorization",
+    "result": "Order completion recovered to 91%"
+  },
+  {
+    "case_id": "INC021",
+    "problem": "Checkout conversion fell during a regional incident",
+    "evidence": ["Gateway status operational", "Regional transaction timeouts", "Retry volume increased"],
+    "root_cause": "Regional payment provider degradation",
+    "solution": "Route traffic to a healthy provider and tune retries",
+    "result": "Timeouts returned to baseline"
+  },
+  {
+    "case_id": "INC033",
+    "problem": "Order processing slowed while checkout remained available",
+    "evidence": ["Database CPU high", "Processing time increased", "Payment failures normal"],
+    "root_cause": "Database performance",
+    "solution": "Optimize slow query and scale read capacity",
+    "result": "Processing time returned below 500ms"
+  }
+]

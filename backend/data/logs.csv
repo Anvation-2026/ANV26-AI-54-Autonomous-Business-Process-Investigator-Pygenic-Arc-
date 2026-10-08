@@ -1,0 +1,5 @@
+timestamp,service,event,severity,message
+2026-10-08T12:03:00Z,payment-service,timeout,ERROR,Upstream authorization exceeded 1500ms
+2026-10-08T12:04:00Z,payment-service,retry,WARNING,Retrying authorization request
+2026-10-08T12:05:00Z,checkout-service,order_failed,ERROR,Payment attempt exhausted retry budget
+2026-10-08T12:06:00Z,payment-service,latency,ERROR,p95 upstream latency is 1840ms

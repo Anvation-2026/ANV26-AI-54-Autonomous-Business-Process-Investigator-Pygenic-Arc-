@@ -1,0 +1,7 @@
+transaction_id,timestamp,payment_status,processing_time,error_code,gateway_status
+TX-1001,2026-10-08T11:59:00Z,success,402,,operational
+TX-1002,2026-10-08T12:01:00Z,failed,1700,TIMEOUT,operational
+TX-1003,2026-10-08T12:02:00Z,failed,1910,TIMEOUT,operational
+TX-1004,2026-10-08T12:03:00Z,failed,1820,AUTH_RETRY,operational
+TX-1005,2026-10-08T12:04:00Z,success,1390,,operational
+TX-1006,2026-10-08T12:05:00Z,failed,2100,TIMEOUT,operational

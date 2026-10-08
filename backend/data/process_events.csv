@@ -1,0 +1,4 @@
+ts,event_type,actor,details
+2026-10-07T17:35:00+00:00,deploy,release-bot,red-herring deploy: documentation-only change
+2026-10-07T17:42:00+00:00,config_change,ops-user,red-herring: dashboard label change
+2026-10-07T17:51:00+00:00,campaign_start,marketing-bot,red-herring campaign started in a non-affected segment
