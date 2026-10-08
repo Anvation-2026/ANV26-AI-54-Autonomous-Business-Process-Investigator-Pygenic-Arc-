@@ -204,6 +204,14 @@ def uploaded_investigation() -> dict:
     numeric_values = {key: values for key, values in numeric_values.items() if values}
     if not numeric_values:
         return {"id": INVESTIGATION_ID, "ready": False, "status": "insufficient_evidence", "uploads": [{"name": name, "type": item["type"], "records": item["records"]} for name, item in UPLOADS.items()], "message": "No numeric fields were found. Upload measurable metrics, transaction values, rates, durations, counts, or other numeric evidence."}
+    if not anomalies:
+        return {
+            "id": INVESTIGATION_ID,
+            "ready": False,
+            "status": "insufficient_evidence",
+            "uploads": [{"name": name, "type": item["type"], "records": item["records"]} for name, item in UPLOADS.items()],
+            "message": "No statistically detectable anomaly was found in the uploaded numeric fields.",
+        }
     metric = max(numeric_values, key=lambda key: len(numeric_values[key]))
     values = numeric_values[metric]
     low, high = min(values), max(values)
@@ -285,69 +293,6 @@ def investigate() -> dict:
     # The legacy report shape remains the HTTP contract; the compiled agent
     # graph enriches it with messages, planner steps, and durable checkpoints.
     return run_investigation_graph(uploaded_investigation(), CHECKPOINTS)
-    baseline = {
-        "payment_failure_rate": 4.8,
-        "timeout_rate": 1.0,
-        "complaints": 100,
-        "website_traffic": 100,
-        "inventory_level": 100,
-        "processing_time_ms": 420,
-    }
-    current = {
-        "payment_failure_rate": 6.8,
-        "timeout_rate": 4.0,
-        "complaints": 128,
-        "website_traffic": 101,
-        "inventory_level": 99,
-        "processing_time_ms": 1680,
-    }
-    evidence = [
-        {"id": "E-001", "source": "business_metrics", "timestamp": "2026-10-08T12:00:00Z", "description": "Order completion fell from 94.8% to 62.0% (-34.6%).", "severity": "high", "relevance_score": 0.99, "supports": ["payment_gateway_latency", "application_issue"]},
-        {"id": "E-002", "source": "transactions", "timestamp": "2026-10-08T12:03:00Z", "description": "Payment failures increased 42% over baseline.", "severity": "high", "relevance_score": 0.94, "supports": ["payment_gateway_latency"]},
-        {"id": "E-003", "source": "transactions", "timestamp": "2026-10-08T12:04:00Z", "description": "Transaction timeout rate reached 4x normal.", "severity": "high", "relevance_score": 0.97, "supports": ["payment_gateway_latency", "application_issue"]},
-        {"id": "E-004", "source": "tickets", "timestamp": "2026-10-08T12:08:00Z", "description": "Customer complaints about checkout increased 28%.", "severity": "medium", "relevance_score": 0.76, "supports": ["payment_gateway_latency", "application_issue"]},
-        {"id": "E-005", "source": "business_metrics", "timestamp": "2026-10-08T12:00:00Z", "description": "Website traffic remained normal (+1%), weakening a demand-side explanation.", "severity": "low", "relevance_score": 0.66, "supports": ["payment_gateway_latency"]},
-        {"id": "E-006", "source": "business_metrics", "timestamp": "2026-10-08T12:00:00Z", "description": "Inventory remained normal (-1%), weakening an inventory explanation.", "severity": "low", "relevance_score": 0.63, "supports": ["payment_gateway_latency"]},
-        {"id": "E-007", "source": "gateway_status", "timestamp": "2026-10-08T12:00:00Z", "description": "Payment gateway health endpoint reported OPERATIONAL.", "severity": "medium", "relevance_score": 0.32, "supports": [], "conflict": True, "conflict_explanation": "A provider status page can remain operational while a regional or latency degradation affects real transactions. This signal is 18 minutes older than the transaction evidence and is therefore noisy, not ignored."},
-    ]
-    causes = [
-        {"id": "payment_gateway_latency", "name": "Payment Gateway Latency", "score": 87, "evidence_ids": ["E-001", "E-002", "E-003", "E-004", "E-005"], "explanation": "Transaction failures and timeouts are direct leading indicators, while normal traffic and inventory rule out common alternatives."},
-        {"id": "database_performance", "name": "Database Performance", "score": 54, "evidence_ids": ["E-001", "E-003"], "explanation": "Higher processing time is compatible with database pressure, but there is no database-specific log evidence."},
-        {"id": "application_issue", "name": "Website Application Issue", "score": 43, "evidence_ids": ["E-001", "E-003", "E-004"], "explanation": "Checkout failures could be application-side, but payment-specific failures make this less likely."},
-        {"id": "inventory_issue", "name": "Inventory Issue", "score": 18, "evidence_ids": ["E-006"], "explanation": "Inventory stayed normal, so this cause has weak support."},
-        {"id": "marketing_demand_spike", "name": "Marketing / Demand Spike", "score": 12, "evidence_ids": ["E-005"], "explanation": "Traffic remained normal and does not explain the completion drop."},
-    ]
-    cases = _cases()
-    query = " ".join([anomaly["description"], evidence[1]["description"], evidence[2]["description"]]).lower()
-    retrieved = sorted(cases, key=lambda case: sum(word in json.dumps(case).lower() for word in query.split() if len(word) > 5), reverse=True)[:3]
-    top = causes[0]
-    matching_cases = sorted(retrieved, key=lambda case: sum(word in json.dumps(case).lower() for word in query.split() if len(word) > 5), reverse=True)
-    has_match = bool(matching_cases and sum(word in json.dumps(matching_cases[0]).lower() for word in query.split() if len(word) > 5) >= 2)
-    return {
-        "id": INVESTIGATION_ID,
-        "anomaly": anomaly,
-        "baseline": baseline,
-        "current": current,
-        "evidence": evidence,
-        "causes": causes,
-        "conflicts": [item for item in evidence if item.get("conflict")],
-        "historical_cases": matching_cases,
-        "history": {
-            "source": "local JSON history",
-            "match_found": has_match,
-            "mode": "historical comparison" if has_match else "fresh RCA investigation",
-            "stored_cases": len(cases),
-        },
-        "uploads": [{"name": name, "type": item["type"], "records": item["records"]} for name, item in UPLOADS.items()],
-        "solution": {
-            "root_cause": top["name"],
-            "plan": ["Inspect payment API latency by region and provider.", "Review timeout and retry configuration.", "Replay failed transactions in a safe test environment.", "Test fallback authorization before any production change.", "Re-run order completion analysis after verification."],
-            "expected_outcome": {"order_completion_rate": {"current": "62%", "projected": "90%+"}, "payment_failure_rate": {"current": "+42%", "projected": "<10% increase"}, "timeout_rate": {"current": "4x", "projected": "<1.5x"}, "complaints": {"current": "+28%", "projected": "normal range"}},
-            "disclaimer": "Projected outcome based on similar historical cases; it is not guaranteed.",
-        },
-        "verification": {"status": "pending", "decision": None, "notes": "Human review is required. Pygenic Arc never executes production changes."},
-        "method": {"agents": ["Investigator", "RCA", "Solution Planner", "Verification"], "ranking_label": "Confidence / Evidence Score (not calibrated probability)", "rag": "Keyword similarity fallback; replace with Gemini embeddings + ChromaDB when configured."},
-    }
 
 
 def diagnose_case(case_id: str, failure_time: str, description: str) -> dict:
@@ -387,7 +332,8 @@ def diagnose_case(case_id: str, failure_time: str, description: str) -> dict:
 
 
 def graph_payload(report: dict) -> dict:
-    nodes = [{"id": "anomaly", "label": "Order completion -35%", "type": "anomaly"}]
+    anomaly = report["anomaly"]
+    nodes = [{"id": "anomaly", "label": f"{anomaly['metric']} {anomaly['deviation_percent']}%", "type": "anomaly"}]
     edges = []
     for evidence in report["evidence"]:
         nodes.append({"id": evidence["id"], "label": evidence["description"], "type": "evidence"})
@@ -396,7 +342,7 @@ def graph_payload(report: dict) -> dict:
         nodes.append({"id": cause["id"], "label": cause["name"], "type": "cause"})
         for evidence_id in cause["evidence_ids"]:
             edges.append({"source": evidence_id, "target": cause["id"]})
-    nodes.append({"id": "solution", "label": "Investigate latency + timeout fallback", "type": "solution"})
+    nodes.append({"id": "solution", "label": report["solution"]["plan"][0], "type": "solution"})
     edges.append({"source": report["causes"][0]["id"], "target": "solution"})
     return {"nodes": nodes, "edges": edges}
 
@@ -407,10 +353,10 @@ def final_report(report: dict) -> dict:
 
 
 def gemini_answer(question: str, context: dict) -> tuple[str, bool]:
-    """Ask Gemini with investigation-only context; return offline status when unavailable."""
+    """Ask Gemini with investigation-only context."""
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
-        return ("Gemini is not configured. Add GEMINI_API_KEY to .env and restart the backend. I can still answer basic questions from the local investigation.", False)
+        raise RuntimeError("GEMINI_API_KEY is not configured")
     prompt = (
         "You are the Pygenic Arc e-commerce investigation assistant. Only answer questions strictly about the supplied investigation context. "
         "Allowed topics: anomaly summary, evidence trail (cite evidence IDs), ranked probable causes, the selected anomaly, the recommended solution steps, human verification status/decision, the final report, and the investigation graph. "
@@ -427,8 +373,8 @@ def gemini_answer(question: str, context: dict) -> tuple[str, bool]:
             result = json.loads(response.read())
         text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
         return (text, True)
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, IndexError, json.JSONDecodeError):
-        return ("Gemini could not be reached. The investigation is still available in offline mode; please verify your API key and network connection.", False)
+    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, IndexError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Gemini request failed: {error}") from error
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -457,7 +403,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         report = investigate()
         if path == "/api/investigate" or path == f"/api/investigation/{INVESTIGATION_ID}/report":
-            self._send(200, final_report(report) if path.endswith("/report") else report)
+            if not report.get("ready"):
+                self._send(422, report)
+            else:
+                self._send(200, final_report(report) if path.endswith("/report") else report)
         elif path == f"/api/investigation/{INVESTIGATION_ID}/evidence":
             if report.get("ready"):
                 self._send(200, report["evidence"])
@@ -495,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         report = investigate()
         if path in ("/api/investigation/start", "/api/rca/investigate"):
-            self._send(200, report)
+            self._send(200 if report.get("ready") else 422, report)
         elif path == "/api/v1/diagnose":
             case_id = str(body.get("case_id", "")).strip()
             failure_time = str(body.get("failure_time", "")).strip()
@@ -511,8 +460,15 @@ class Handler(BaseHTTPRequestHandler):
             if not question:
                 self._send(422, {"error": "question is required"})
                 return
-            answer, powered_by_gemini = gemini_answer(question, body.get("context", report))
-            self._send(200, {"answer": answer, "powered_by": "gemini" if powered_by_gemini else "offline", "grounded_in": "current e-commerce investigation"})
+            if not report.get("ready"):
+                self._send(422, report)
+                return
+            try:
+                answer, powered_by_gemini = gemini_answer(question, body.get("context", report))
+            except RuntimeError as error:
+                self._send(503, {"error": str(error)})
+                return
+            self._send(200, {"answer": answer, "powered_by": "gemini" if powered_by_gemini else "unknown", "grounded_in": "current e-commerce investigation"})
         elif path == "/api/solution/generate":
             self._send(200, report["solution"])
         elif path == f"/api/investigation/{INVESTIGATION_ID}/verify":
