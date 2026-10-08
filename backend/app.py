@@ -373,8 +373,19 @@ def gemini_answer(question: str, context: dict) -> tuple[str, bool]:
         with urllib.request.urlopen(request, timeout=20) as response:
             result = json.loads(response.read())
         text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+        if not text:
+            raise RuntimeError("Gemini returned an empty response")
         return (text, True)
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, IndexError, json.JSONDecodeError) as error:
+    except urllib.error.HTTPError as error:
+        if error.code == 429:
+            retry_after = error.headers.get("Retry-After")
+            wait_hint = f" Retry after {retry_after} seconds." if retry_after else ""
+            raise RuntimeError(
+                f"Gemini rate limit or quota exceeded (HTTP 429).{wait_hint} "
+                "Check the Gemini API quota, billing status, model limits, and GEMINI_MODEL."
+            ) from error
+        raise RuntimeError(f"Gemini request failed with HTTP {error.code}: {error.reason}") from error
+    except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError) as error:
         raise RuntimeError(f"Gemini request failed: {error}") from error
 
 
