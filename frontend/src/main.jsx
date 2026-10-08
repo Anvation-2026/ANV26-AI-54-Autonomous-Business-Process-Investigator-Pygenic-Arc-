@@ -348,7 +348,15 @@ function App() {
   const navigate = (nextView) => {
     window.location.hash = nextView;
     setView(nextView);
-    window.setTimeout(() => document.getElementById(nextView)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(nextView);
+      if (!target || !target.isConnected) return;
+      try {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {
+        target.scrollIntoView();
+      }
+    });
   };
 
   return (
