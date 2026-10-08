@@ -239,6 +239,42 @@ def investigate() -> dict:
     }
 
 
+def diagnose_case(case_id: str, failure_time: str, description: str) -> dict:
+    report = investigate()
+    if not report.get("ready"):
+        return {
+            "case_id": case_id,
+            "failure_time": failure_time,
+            "description": description,
+            "status": "insufficient_evidence",
+            "root_cause": None,
+            "confidence": 0,
+            "supporting_evidence": [],
+            "recommended_actions": ["Upload CSV or JSON telemetry, metrics, transactions, tickets, or logs before running RCA."],
+            "explanation": "The diagnosis request was accepted, but no investigation evidence is currently loaded.",
+        }
+    top_cause = report["causes"][0] if report.get("causes") else {}
+    return {
+        "case_id": case_id,
+        "failure_time": failure_time,
+        "description": description,
+        "status": "diagnosed",
+        "root_cause": top_cause.get("name"),
+        "confidence": top_cause.get("score", 0),
+        "confidence_label": "Confidence / Evidence Score (not calibrated probability)",
+        "supporting_evidence": [
+            item for item in report.get("evidence", [])
+            if item["id"] in top_cause.get("evidence_ids", [])
+        ],
+        "ranked_causes": report.get("causes", []),
+        "recommended_actions": report.get("solution", {}).get("plan", []),
+        "historical_matches": report.get("historical_cases", []),
+        "conflicting_signals": report.get("conflicts", []),
+        "explanation": top_cause.get("explanation", "No explanation was produced."),
+        "investigation_id": report.get("id"),
+    }
+
+
 def graph_payload(report: dict) -> dict:
     nodes = [{"id": "anomaly", "label": "Order completion -35%", "type": "anomaly"}]
     edges = []
@@ -333,6 +369,14 @@ class Handler(BaseHTTPRequestHandler):
         report = investigate()
         if path in ("/api/investigation/start", "/api/rca/investigate"):
             self._send(200, report)
+        elif path == "/api/v1/diagnose":
+            case_id = str(body.get("case_id", "")).strip()
+            failure_time = str(body.get("failure_time", "")).strip()
+            description = str(body.get("description", "")).strip()
+            if not case_id or not failure_time or not description:
+                self._send(422, {"error": "case_id, failure_time, and description are required"})
+                return
+            self._send(200, diagnose_case(case_id, failure_time, description))
         elif path == "/api/rag/search":
             self._send(200, {"query": body.get("query", "order completion payment timeout"), "results": report["historical_cases"]})
         elif path == "/api/chat":

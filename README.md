@@ -97,11 +97,42 @@ POST /api/solution/generate
 GET  /api/investigation/{id}/graph
 POST /api/investigation/{id}/verify
 GET  /api/investigation/{id}/report
+POST /api/v1/diagnose
 ```
 
 Verification accepts only `approved`, `modified`, or `rejected`. Approved and
 modified results are saved to browser localStorage; no production action is
 executed.
+
+## Agent-facing RCA tool
+
+Use this tool whenever a business process fails, an alert triggers, or a user
+reports an operational incident. It accepts a case identifier, failure time,
+and symptom description, then returns the ranked causes, evidence trail,
+confidence/evidence scores, conflicting signals, and recommended actions from
+the currently loaded investigation data.
+
+```text
+Tool name: run_root_cause_analysis
+Endpoint: POST http://localhost:8000/api/v1/diagnose
+Input: {"case_id": string, "failure_time": string, "description": string}
+Output: structured JSON diagnosis
+```
+
+Example:
+
+```powershell
+$body = @{
+  case_id = "incident-9921"
+  failure_time = "2026-04-18 10:35:00"
+  description = "Checkout requests became slow and some payments failed."
+} | ConvertTo-Json
+Invoke-RestMethod http://localhost:8000/api/v1/diagnose `
+  -Method Post -ContentType "application/json" -Body $body
+```
+
+The endpoint does not execute remediation. If no telemetry has been uploaded,
+it returns `status: "insufficient_evidence"` and explains what data is needed.
 
 ## Architecture decisions
 
