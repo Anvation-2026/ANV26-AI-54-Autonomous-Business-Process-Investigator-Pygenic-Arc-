@@ -90,6 +90,7 @@ The standard endpoints are available:
 
 ```text
 GET  /api/anomaly/detect
+GET  /api/health
 POST /api/data/upload
 POST /api/investigation/start
 GET  /api/investigation/{id}/evidence

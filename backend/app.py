@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 INVESTIGATION_ID = "INV-2026-1008-001"
+BACKEND_VERSION = "2026.10.08-strict"
 REVIEWS: dict[str, dict] = {}
 UPLOADS: dict[str, dict] = {}
 
@@ -341,6 +342,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/api/health":
+            self._send(200, {"ok": True, "service": "pygenic-arc-backend", "version": BACKEND_VERSION, "uploads": len(UPLOADS)})
+            return
         report = investigate()
         if path == "/api/investigate" or path == f"/api/investigation/{INVESTIGATION_ID}/report":
             self._send(200, final_report(report) if path.endswith("/report") else report)
@@ -454,7 +458,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "Not found"})
 
     def log_message(self, *_args: object) -> None:
-        return
+        print(f"[backend] {self.command} {self.path}", flush=True)
 
 
 if __name__ == "__main__":

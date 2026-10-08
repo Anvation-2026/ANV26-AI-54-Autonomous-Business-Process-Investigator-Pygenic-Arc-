@@ -41,6 +41,8 @@ function App() {
     const uploads = JSON.parse(localStorage.getItem("pygenicArc.uploads") || "[]");
     const browserHistory = JSON.parse(localStorage.getItem("pygenicArc.history") || "[]");
     try {
+      const health = await fetch("/api/health", { cache: "no-store" });
+      if (!health.ok) throw new Error(`Backend health check failed (HTTP ${health.status}).`);
       let response = await fetch("/api/investigate", { cache: "no-store" });
       let body = await response.text();
       if (!response.ok) throw new Error(`Investigation service returned HTTP ${response.status}.`);
