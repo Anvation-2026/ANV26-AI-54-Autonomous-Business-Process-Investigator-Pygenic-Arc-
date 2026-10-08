@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import JSZip from "jszip";
 import { jsPDF } from "jspdf";
@@ -30,6 +30,8 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([{ role: "bot", text: "I’m ready to explain this investigation. Ask me about the anomaly, evidence, root cause, conflict, or recommended action." }]);
   const [chatLoading, setChatLoading] = useState(false);
+  const chatPanelRef = useRef(null);
+  const chatLauncherRef = useRef(null);
   const [selectedPreviousFiles, setSelectedPreviousFiles] = useState([]);
   const [loadError, setLoadError] = useState("");
   const [selectedAnomaly, setSelectedAnomalyState] = useState(() => {
@@ -79,6 +81,17 @@ function App() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+  useEffect(() => {
+    if (!chatOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (chatPanelRef.current?.contains(target) || chatLauncherRef.current?.contains(target)) return;
+      setChatOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [chatOpen]);
   if (!data && loadError) return <div className="loading"><div className="load-error"><b>Unable to load investigation workspace</b><p>{loadError}</p><button className="primary" onClick={load}>Retry</button></div></div>;
   if (!data) return <div className="loading">Loading investigation workspace…</div>;
   const hasInvestigation = data.ready !== false;
@@ -386,8 +399,8 @@ function App() {
           {view === "method" && <section id="method"><Method data={data} /></section>}
           {pipelineStage >= 8 && <FinalResult data={data} onPdf={downloadPdf} onChat={() => setChatOpen(true)} />}
         </> : <section className="upload-required"><h2>{view === "anomaly" ? "Upload data to detect anomalies" : "Upload data to begin"}</h2><p>The investigation is paused until you upload an e-commerce CSV, JSON, or ZIP containing CSV/JSON files. Results, evidence, causes, recommendations, PDF reports, and graphs will be calculated from those files only.</p></section>}
-        <button type="button" className={`chat-launcher ${chatOpen ? "open" : ""}`} aria-expanded={chatOpen} onClick={() => setChatOpen((open) => !open)}>{chatOpen ? "× Close assistant" : "✦ Ask ABPI assistant"}</button>
-        {chatOpen && <Chatbot messages={chatMessages} input={chatInput} setInput={setChatInput} onAsk={askChatbot} onClose={() => setChatOpen(false)} loading={chatLoading} />}
+        <button ref={chatLauncherRef} type="button" className={`chat-launcher ${chatOpen ? "open" : ""}`} aria-expanded={chatOpen} onClick={() => setChatOpen((open) => !open)}>{chatOpen ? "× Close assistant" : "✦ Ask ABPI assistant"}</button>
+        {chatOpen && <div ref={chatPanelRef}><Chatbot messages={chatMessages} input={chatInput} setInput={setChatInput} onAsk={askChatbot} onClose={() => setChatOpen(false)} loading={chatLoading} /></div>}
       </main>
     </div>
   );
