@@ -389,6 +389,58 @@ def gemini_answer(question: str, context: dict) -> tuple[str, bool]:
         raise RuntimeError(f"Gemini request failed: {error}") from error
 
 
+def grounded_local_answer(question: str, context: dict) -> str:
+    """Answer common investigation questions only from the current report."""
+    text = question.lower()
+    anomaly = context.get("anomaly") or {}
+    causes = context.get("causes") or []
+    evidence = context.get("evidence") or []
+    solution = context.get("solution") or {}
+    conflicts = context.get("conflicts") or []
+    history = context.get("historical_cases") or []
+    if any(term in text for term in ("root cause", "cause", "why")):
+        if not causes:
+            return "The backend did not return a ranked cause."
+        top = causes[0]
+        return f"Leading cause: {top.get('name', 'unavailable')} with a {top.get('score', 0)}% confidence/evidence score. {top.get('explanation', '')} Supporting evidence: {', '.join(top.get('evidence_ids', [])) or 'none returned'}."
+    if any(term in text for term in ("evidence", "signal", "proof")):
+        if not evidence:
+            return "The backend did not return evidence records."
+        return "Backend evidence: " + " ".join(
+            f"{item.get('id')}: {item.get('description', '')}" for item in evidence
+        )
+    if any(term in text for term in ("conflict", "noise", "contradict")):
+        if not conflicts:
+            return "The backend returned no conflicting signals for this investigation."
+        return "Conflicting signals returned by the backend: " + " ".join(
+            f"{item.get('id')}: {item.get('description', '')}" for item in conflicts
+        )
+    if any(term in text for term in ("solution", "action", "recommend", "next")):
+        plan = solution.get("plan") or []
+        return "Backend recommendation: " + " ".join(
+            f"{index + 1}. {step}" for index, step in enumerate(plan)
+        ) if plan else "The backend did not return a recommendation."
+    if any(term in text for term in ("historical", "rag", "similar", "previous")):
+        if not history:
+            return "The RAG retriever found no similar historical cases."
+        return "Retrieved historical cases: " + " ".join(
+            f"{item.get('case_id', 'unknown')} ({item.get('retrieval_score', 'score unavailable')}): {item.get('root_cause', 'root cause unavailable')}."
+            for item in history
+        )
+    if any(term in text for term in ("anomaly", "deviation", "metric")):
+        return (
+            f"Detected anomaly: {anomaly.get('metric', 'unavailable')} changed from "
+            f"{anomaly.get('baseline', 'unavailable')} to {anomaly.get('current', 'unavailable')} "
+            f"({anomaly.get('deviation_percent', 'unavailable')}% deviation). "
+            f"Severity: {anomaly.get('severity', 'unavailable')}."
+        )
+    return (
+        "I can answer questions about the backend report's anomaly, evidence, "
+        "conflicts, ranked causes, recommendations, or retrieved historical cases. "
+        "Ask about one of those items."
+    )
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, status: int, payload: object) -> None:
         body = json.dumps(payload).encode()
@@ -484,12 +536,26 @@ class Handler(BaseHTTPRequestHandler):
             if not report.get("ready"):
                 self._send(422, report)
                 return
+            if os.environ.get("CHAT_PROVIDER", "deterministic").strip().lower() != "gemini":
+                answer = grounded_local_answer(question, report)
+                self._send(200, {
+                    "answer": answer,
+                    "powered_by": "deterministic_backend",
+                    "grounded_in": "current e-commerce investigation",
+                })
+                return
             try:
                 answer, powered_by_gemini = gemini_answer(question, body.get("context", report))
             except RuntimeError as error:
-                self._send(503, {"error": str(error)})
+                answer = grounded_local_answer(question, report)
+                self._send(200, {
+                    "answer": answer,
+                    "powered_by": "deterministic_backend",
+                    "provider_error": str(error),
+                    "grounded_in": "current e-commerce investigation",
+                })
                 return
-            self._send(200, {"answer": answer, "powered_by": "gemini" if powered_by_gemini else "unknown", "grounded_in": "current e-commerce investigation"})
+            self._send(200, {"answer": answer, "powered_by": "gemini" if powered_by_gemini else "deterministic_backend", "grounded_in": "current e-commerce investigation"})
         elif path == "/api/solution/generate":
             self._send(200, report["solution"])
         elif path == f"/api/investigation/{INVESTIGATION_ID}/verify":

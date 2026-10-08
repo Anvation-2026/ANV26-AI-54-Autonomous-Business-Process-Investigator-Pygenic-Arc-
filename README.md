@@ -138,6 +138,15 @@ The investigation response exposes the audit trail at
 `history.retrieval` and `method.rag_agent`, including the method, source,
 document count, query terms, and number of returned matches.
 
+### Assistant provider
+
+The chat assistant defaults to `CHAT_PROVIDER=deterministic`. This local
+provider answers supported questions directly from the current backend report
+and is not affected by Gemini quota limits. It does not invent facts or use
+demo data. Set `CHAT_PROVIDER=gemini` in `backend\.env` only when Gemini quota
+and billing are available; if that provider fails, the backend still returns a
+grounded deterministic answer and includes the provider error for diagnosis.
+
 ## Agent-facing RCA tool
 
 Use this tool whenever a business process fails, an alert triggers, or a user
