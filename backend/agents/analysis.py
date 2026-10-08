@@ -56,7 +56,7 @@ class RAGMemoryAgent(InvestigationAgent):
         report = state["investigation"]
         matches = report.get("historical_cases", [])
         report.setdefault("method", {})["rag_agent"] = {
-            "retrieval": "backend/data/historical_cases.json token-overlap search",
+            "retrieval": report.get("history", {}).get("retrieval", {}),
             "matches": len(matches),
         }
         state.setdefault("messages", []).append(message(

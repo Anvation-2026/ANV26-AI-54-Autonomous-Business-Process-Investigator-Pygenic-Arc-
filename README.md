@@ -74,8 +74,10 @@ The first investigation uses the RCA engine when no sufficiently similar
 history exists. After a human selects **Approve & save history** or
 **Modify & save**, the case is saved in the browser's `localStorage`. Uploaded
 files and review decisions are also stored there. Rejected recommendations are
-not stored. No MongoDB, ChromaDB, or server history database is used; the
-backend's separate ignored checkpoint file only stores graph execution state.
+not stored. Historical RAG memory is read from
+`backend\data\historical_cases.json`; it is not mixed with browser history.
+No MongoDB or ChromaDB server is required. The backend's separate ignored
+checkpoint file stores graph execution state.
 
 The investigation is deterministic and uses only the files uploaded through
 the backend API. It does not invent a result when evidence is absent or
@@ -107,6 +109,34 @@ POST /api/v1/diagnose
 Verification accepts only `approved`, `modified`, or `rejected`. Approved and
 modified results are saved to browser localStorage; no production action is
 executed.
+
+### RAG retrieval
+
+RAG is implemented as local retrieval followed by evidence-grounded
+generation/planning:
+
+1. Each historical case is converted into one document containing its problem,
+   evidence, root cause, solution, and result.
+2. The current uploaded anomaly and evidence descriptions form the query.
+3. `sklearn`'s `TfidfVectorizer` creates sparse unigram/bigram vectors and
+   `cosine_similarity` ranks the historical documents.
+4. Only positive-scoring matches are returned, with `retrieval_score`,
+   `retrieval_rank`, and `retrieval_source` attached to each case.
+5. The Solution Planner and RCA response can use those retrieved cases, but
+   the uploaded evidence remains authoritative; retrieved history never becomes
+   current telemetry.
+
+To query memory directly, send a real query; there is no fabricated default:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:8000/api/rag/search `
+  -ContentType "application/json" `
+  -Body '{"query":"regional checkout payment timeouts"}'
+```
+
+The investigation response exposes the audit trail at
+`history.retrieval` and `method.rag_agent`, including the method, source,
+document count, query terms, and number of returned matches.
 
 ## Agent-facing RCA tool
 
@@ -166,10 +196,11 @@ production remediation.
 ## Architecture decisions
 
 The deterministic anomaly, filtering, evidence scoring, conflict detection,
-ranking, and projected outcomes happen before any LLM integration. The current
-historical retrieval is a dependency-free keyword-similarity fallback; it is
-explicitly labeled in the API. Gemini embeddings + ChromaDB can replace that
-provider without changing the frontend contract.
+ranking, and projected outcomes happen before any LLM integration. Historical
+retrieval is a local TF-IDF/cosine-similarity index over the checked-in case
+memory, so it is reproducible and requires no API key. Gemini is optional for
+the separate RCA tool-call audit; it does not invent or replace retrieved
+evidence.
 
 Scores are labeled **Confidence / Evidence Score**, not scientifically
 calibrated probabilities. Projected outcomes are estimates from similar cases,
