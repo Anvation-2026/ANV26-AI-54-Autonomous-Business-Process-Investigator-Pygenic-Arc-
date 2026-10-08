@@ -195,7 +195,7 @@ function App() {
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(114, 129, 155);
-    pdf.text("Pygenic Arc · E-commerce Business Process Investigator", margin, y);
+    pdf.text("ABPI · Autonomous Business Process Investigator", margin, y);
     y += 8;
     pdf.setTextColor(20, 35, 61);
 
@@ -364,7 +364,7 @@ function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="brand"><span>PA</span> Pygenic Arc</div>
+        <div className="brand"><span>AB</span> ABPI</div>
         <div className="workspace"><small>WORKSPACE</small><b>E-commerce Operations</b></div>
         <div className="nav-label">INVESTIGATION</div>
         <nav>{tabs.map(([id, icon, label]) => <button type="button" key={id} className={view === id ? "active" : ""} onClick={() => navigate(id)}><i>{icon}</i>{label}</button>)}</nav>
@@ -386,7 +386,7 @@ function App() {
           {view === "method" && <section id="method"><Method data={data} /></section>}
           {pipelineStage >= 8 && <FinalResult data={data} onPdf={downloadPdf} onChat={() => setChatOpen(true)} />}
         </> : <section className="upload-required"><h2>{view === "anomaly" ? "Upload data to detect anomalies" : "Upload data to begin"}</h2><p>The investigation is paused until you upload an e-commerce CSV, JSON, or ZIP containing CSV/JSON files. Results, evidence, causes, recommendations, PDF reports, and graphs will be calculated from those files only.</p></section>}
-        <button className="chat-launcher" onClick={() => setChatOpen((open) => !open)}>✦ Ask investigator</button>
+        <button type="button" className={`chat-launcher ${chatOpen ? "open" : ""}`} aria-expanded={chatOpen} onClick={() => setChatOpen((open) => !open)}>{chatOpen ? "× Close assistant" : "✦ Ask ABPI assistant"}</button>
         {chatOpen && <Chatbot messages={chatMessages} input={chatInput} setInput={setChatInput} onAsk={askChatbot} onClose={() => setChatOpen(false)} loading={chatLoading} />}
       </main>
     </div>
@@ -423,7 +423,7 @@ function FinalResult({ data, onPdf, onChat }) {
   return <section className="final-result"><div className="final-heading"><div><span className="eyebrow">Investigation complete</span><h2>Short conclusion</h2><p><b>{data.causes[0].name}</b> is the leading cause with a <b>{data.causes[0].score}% confidence/evidence score</b>, based on the uploaded evidence returned by the backend.</p></div><div className="final-actions"><button className="primary" onClick={onPdf}>▣ Generate PDF</button><button className="outline" onClick={onChat}>✦ Ask chatbot</button></div></div><div className="mini-graph"><span className="graph-node blue">Anomaly<br /><b>{data.anomaly.metric} {data.anomaly.deviation_percent}%</b></span><i>→</i><span className="graph-node red">Evidence<br /><b>{data.evidence.length} signals</b></span><i>→</i><span className="graph-node orange">Conflicts<br /><b>{data.conflicts.length} returned</b></span><i>→</i><span className="graph-node green">Root cause<br /><b>{data.causes[0].name}</b></span><i>→</i><span className="graph-node purple">Action<br /><b>{data.solution.plan[0]}</b></span></div></section>;
 }
 function Chatbot({ messages, input, setInput, onAsk, onClose, loading }) {
-  return <aside className="chatbot"><header><b>Pygenic Arc assistant</b><button onClick={onClose}>×</button></header><div className="chat-messages">{messages.map((message, index) => <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>{message.text}</div>)}{loading && <div className="chat-message bot">Analyzing the investigation context…</div>}</div><div className="chat-input"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onAsk()} placeholder="Ask about this report…" /><button onClick={onAsk} disabled={loading}>→</button></div><small>Gemini answers are grounded in the current e-commerce investigation; offline fallback is available.</small></aside>;
+  return <aside className="chatbot" aria-label="ABPI assistant"><header><b>ABPI assistant</b><button type="button" aria-label="Close assistant" onClick={onClose}>×</button></header><div className="chat-messages">{messages.map((message, index) => <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>{message.text}</div>)}{loading && <div className="chat-message bot">Analyzing the investigation context…</div>}</div><div className="chat-input"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && onAsk()} placeholder="Ask about this report…" /><button type="button" onClick={onAsk} disabled={loading}>→</button></div><small>Answers are grounded in the current investigation.</small></aside>;
 }
 function UploadPanel({ data, onUpload, onUsePrevious, onDeletePrevious, selectedPreviousFiles, setSelectedPreviousFiles, status }) {
   const previousUploads = data.storedUploads || [];
