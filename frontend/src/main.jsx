@@ -66,7 +66,9 @@ function App() {
         setSelectedAnomalyState(highest);
         localStorage.setItem("pygenicArc.selectedAnomaly", JSON.stringify(highest));
       }
-      setData({ ...serverData, monitor: healthData.monitor, uploads: serverData.ready === false ? [] : uploads, storedUploads: uploads, browserHistory, historyCount: browserHistory.length });
+      const backendUploads = Array.isArray(serverData.uploads) ? serverData.uploads : [];
+      const activeUploads = serverData.ready === false ? [] : backendUploads;
+      setData({ ...serverData, monitor: healthData.monitor, uploads: activeUploads, storedUploads: uploads, browserHistory, historyCount: browserHistory.length });
     } catch (error) {
       setLoadError(error.message || "The backend is unavailable. Start backend\\app.py and retry.");
     }
