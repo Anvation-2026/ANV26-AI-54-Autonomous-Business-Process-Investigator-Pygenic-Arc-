@@ -66,8 +66,9 @@ and its data are isolated under `backend\`.
 
 Use **Add business data** at the top of the React workspace to upload CSV, JSON,
 or a ZIP archive containing CSV/JSON evidence. ZIP files are extracted in the
-browser, and each supported file is parsed and attached to the current
-investigation context; no database or external storage is used.
+browser, then every file is validated and submitted to the backend. The UI
+does not create an offline or synthetic diagnosis when the backend is
+unavailable.
 
 The first investigation uses the RCA engine when no sufficiently similar
 history exists. After a human selects **Approve & save history** or
@@ -76,9 +77,10 @@ files and review decisions are also stored there. Rejected recommendations are
 not stored. No MongoDB, ChromaDB, server database, or local history file is
 used.
 
-The investigation is deterministic and uses the synthetic files in `data/`.
-This makes the final demo reproducible without API keys, MongoDB, or network
-access. `requirements.txt` lists optional integrations for a later deployment:
+The investigation is deterministic and uses only the files uploaded through
+the backend API. It does not invent a result when evidence is absent or
+non-numeric: the API returns `status: "insufficient_evidence"` instead.
+`backend\requirements.txt` lists optional integrations for a later deployment:
 FastAPI/Pydantic, Pandas/NumPy/scikit-learn, NetworkX, ChromaDB, Gemini,
 LangGraph, and MongoDB.
 

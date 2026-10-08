@@ -11,7 +11,6 @@ import json
 import math
 import mimetypes
 import os
-import random
 import statistics
 import uuid
 import urllib.error
@@ -79,6 +78,8 @@ def _uploaded_records() -> list[dict]:
 
 def uploaded_investigation() -> dict:
     records = _uploaded_records()
+    if not records:
+        return {"id": INVESTIGATION_ID, "ready": False, "status": "insufficient_evidence", "uploads": [], "message": "Uploaded files contain no readable records."}
     numeric_values: dict[str, list[float]] = {}
     for record in records:
         for key, value in record["data"].items():
@@ -113,8 +114,10 @@ def uploaded_investigation() -> dict:
         })
     anomalies.sort(key=lambda item: item["score"], reverse=True)
     numeric_values = {key: values for key, values in numeric_values.items() if values}
-    metric = max(numeric_values, key=lambda key: len(numeric_values[key])) if numeric_values else "records"
-    values = numeric_values.get(metric, [float(len(records))])
+    if not numeric_values:
+        return {"id": INVESTIGATION_ID, "ready": False, "status": "insufficient_evidence", "uploads": [{"name": name, "type": item["type"], "records": item["records"]} for name, item in UPLOADS.items()], "message": "No numeric fields were found. Upload measurable metrics, transaction values, rates, durations, counts, or other numeric evidence."}
+    metric = max(numeric_values, key=lambda key: len(numeric_values[key]))
+    values = numeric_values[metric]
     low, high = min(values), max(values)
     average = statistics.mean(values)
     spread = pct_change(high, low) if low else 0
@@ -172,7 +175,7 @@ def detect_anomaly() -> dict:
 
 def investigate() -> dict:
     if not UPLOADS:
-        return {"id": INVESTIGATION_ID, "ready": False, "uploads": [], "message": "Upload a CSV or JSON file to start the investigation."}
+        return {"id": INVESTIGATION_ID, "ready": False, "status": "insufficient_evidence", "uploads": [], "message": "Upload a CSV or JSON file to start the investigation."}
     return uploaded_investigation()
     baseline = {
         "payment_failure_rate": 4.8,
@@ -329,17 +332,27 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _require_report(self) -> dict | None:
+        report = investigate()
+        if not report.get("ready"):
+            self._send(422, report)
+            return None
+        return report
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         report = investigate()
         if path == "/api/investigate" or path == f"/api/investigation/{INVESTIGATION_ID}/report":
             self._send(200, final_report(report) if path.endswith("/report") else report)
         elif path == f"/api/investigation/{INVESTIGATION_ID}/evidence":
-            self._send(200, report["evidence"])
+            if report.get("ready"):
+                self._send(200, report["evidence"])
+            else:
+                self._send(422, report)
         elif path == f"/api/investigation/{INVESTIGATION_ID}/graph":
-            self._send(200, graph_payload(report))
+            self._send(200, graph_payload(report) if report.get("ready") else report)
         elif path == "/api/anomaly/detect":
-            self._send(200, report["anomaly"])
+            self._send(200, report["anomaly"] if report.get("ready") else report)
         elif path == "/api/history":
             self._send(200, {"cases": _cases(), "count": len(_cases())})
         elif path == "/" or path == "/index.html" or path.startswith("/assets/"):
@@ -398,7 +411,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/data/upload":
             filename = str(body.get("filename", "")).strip()
             content = body.get("content", "")
-            if not filename or not isinstance(content, str):
+            if not filename or not isinstance(content, str) or not content.strip():
                 self._send(422, {"error": "filename and text content are required"})
                 return
             if not filename.lower().endswith((".csv", ".json")):
@@ -409,7 +422,24 @@ class Handler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 self._send(422, {"error": "The JSON file is invalid"})
                 return
-            records = len(parsed) if isinstance(parsed, list) else 1
+            if filename.lower().endswith(".csv"):
+                import csv
+                from io import StringIO
+                rows = list(csv.DictReader(StringIO(content)))
+                if not rows or not rows[0]:
+                    self._send(422, {"error": "CSV must contain a header row and at least one data row"})
+                    return
+                records = len(rows)
+            elif isinstance(parsed, list):
+                if not parsed or not all(isinstance(row, dict) for row in parsed):
+                    self._send(422, {"error": "JSON must contain a non-empty array of objects"})
+                    return
+                records = len(parsed)
+            elif isinstance(parsed, dict):
+                records = 1
+            else:
+                self._send(422, {"error": "JSON must contain an object or an array of objects"})
+                return
             UPLOADS[filename] = {"type": "JSON" if filename.lower().endswith(".json") else "CSV", "records": records, "content": content, "added_at": datetime.now(timezone.utc).isoformat()}
             self._send(200, {"accepted": True, "filename": filename, "type": UPLOADS[filename]["type"], "records": records, "message": "File added to this local investigation context."})
         else:

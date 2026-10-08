@@ -4,38 +4,6 @@ import JSZip from "jszip";
 import { jsPDF } from "jspdf";
 import "./styles.css";
 
-function offlineInvestigation(uploads) {
-  const records = [];
-  uploads.forEach((upload) => {
-    try {
-      const parsed = upload.type === "JSON" ? JSON.parse(upload.content) : upload.content.split(/\r?\n/).filter(Boolean).slice(1).map((line) => line.split(","));
-      const rows = Array.isArray(parsed) ? parsed : [parsed];
-      rows.forEach((row) => {
-        if (row && typeof row === "object") Object.entries(row).forEach(([field, value]) => {
-          const number = Number(value);
-          if (Number.isFinite(number)) records.push({ field, number, source: upload.name });
-        });
-      });
-    } catch {
-      // Invalid files are already reported during upload; ignore them in fallback analysis.
-    }
-  });
-  const grouped = records.reduce((result, item) => {
-    (result[item.field] ||= []).push(item);
-    return result;
-  }, {});
-  const anomalies = Object.entries(grouped).filter(([, values]) => values.length > 1).map(([field, values], index) => {
-    const average = values.reduce((sum, item) => sum + item.number, 0) / values.length;
-    const candidate = values.reduce((a, b) => Math.abs(b.number - average) > Math.abs(a.number - average) ? b : a);
-    const score = Math.min(99, Math.round(50 + (Math.abs(candidate.number - average) / (Math.abs(average) || 1)) * 35));
-    return { id: `OFFLINE-${index + 1}`, metric: field, value: candidate.number, average: Number(average.toFixed(2)), score, severity: score >= 80 ? "HIGH" : score >= 65 ? "MEDIUM" : "LOW", source: candidate.source, description: `${field} reached ${candidate.number}, compared with an average of ${average.toFixed(2)}.` };
-  }).sort((a, b) => b.score - a.score);
-  const anomaly = anomalies[0] || { metric: "uploaded records", value: records.length, average: records.length, score: 50, severity: "LOW", description: `${records.length} numeric values were found in the uploaded data.`, deviation_percent: 0, anomaly_score: 50 };
-  const evidence = uploads.map((upload, index) => ({ id: `OFF-E-${index + 1}`, source: upload.name, timestamp: upload.addedAt || new Date().toISOString(), description: `${upload.records} records loaded from ${upload.name}.`, severity: "medium", relevance_score: 0.7, supports: ["offline_upload"], conflict: false }));
-  const cause = { id: "offline_pattern", name: "Observed data pattern", score: Math.max(50, anomaly.score), evidence_ids: evidence.map((item) => item.id), explanation: "The backend is unavailable, so this local browser analysis reports the strongest numeric deviation without claiming a confirmed root cause." };
-  return { ready: uploads.length > 0, id: "OFFLINE-INVESTIGATION", anomaly, anomalies, baseline: anomaly.average, current: anomaly.value, evidence, conflicts: [], historical_cases: [], history: { source: "browser local storage", match_found: false, mode: "offline local analysis", stored_cases: 0 }, uploads: uploads.map(({ name, type, records }) => ({ name, type, records })), solution: { root_cause: cause.name, plan: ["Start the Python backend for full evidence and RCA analysis.", "Review the uploaded numeric deviation locally before taking action."], expected_outcome: {}, disclaimer: "Offline browser fallback only; no production action is executed." }, causes: [cause], verification: { status: "pending", decision: null, notes: "Human review is required." }, method: { agents: ["Local analyzer", "RCA placeholder", "Solution planner", "Verification"], ranking_label: "Offline local evidence score", rag: "Backend unavailable; browser fallback is active." } };
-}
-
 const tabs = [
   ["overview", "◈", "Business overview"],
   ["anomaly", "⌁", "Anomaly detection"],
@@ -93,13 +61,11 @@ function App() {
       }
       setData({ ...serverData, uploads: serverData.ready === false ? [] : uploads, storedUploads: uploads, browserHistory, historyCount: browserHistory.length });
     } catch (error) {
-      const localData = offlineInvestigation(uploads);
-      setData({ ...localData, uploads: localData.ready ? localData.uploads : [], storedUploads: uploads, browserHistory, historyCount: browserHistory.length, offline: true });
-      setUploadStatus("Backend unavailable. Showing browser-only local analysis.");
+      setLoadError(error.message || "The backend is unavailable. Start backend\\app.py and retry.");
     }
   };
   useEffect(() => {
-    fetch("/api/data/upload", { method: "DELETE" }).catch(() => {}).finally(load);
+    load();
   }, []);
   useEffect(() => {
     const onHashChange = () => setView(window.location.hash.replace("#", "") || "overview");
@@ -311,9 +277,10 @@ function App() {
         const entry = { ...item, records: Array.isArray(parsed) ? parsed.length : 1, addedAt: new Date().toISOString() };
         added.push(entry);
         try {
-          await fetch("/api/data/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: entry.name, content: entry.content }) });
+          const response = await fetch("/api/data/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: entry.name, content: entry.content }) });
+          if (!response.ok) throw new Error((await response.json()).error || `Backend rejected ${entry.name}.`);
         } catch {
-          // Keep the upload in browser storage so the offline analyzer can use it.
+          throw new Error(`Backend rejected ${entry.name}; no local-only result was created.`);
         }
       }
       const names = new Set(added.map((item) => item.name));
@@ -346,8 +313,7 @@ function App() {
       setDecision("");
       await load();
     } catch (error) {
-      setUploadStatus(`${previousUploads.length} previous file${previousUploads.length === 1 ? "" : "s"} restored in browser-only mode.`);
-      await load();
+      setUploadStatus(error.message || "Previous files could not be restored by the backend.");
     }
   };
   const deletePreviousData = async () => {
