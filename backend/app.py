@@ -390,54 +390,121 @@ def gemini_answer(question: str, context: dict) -> tuple[str, bool]:
 
 
 def grounded_local_answer(question: str, context: dict) -> str:
-    """Answer common investigation questions only from the current report."""
-    text = question.lower()
+    """Answer common investigation questions from the current report with rich context."""
+    text = question.lower().strip()
     anomaly = context.get("anomaly") or {}
     causes = context.get("causes") or []
     evidence = context.get("evidence") or []
     solution = context.get("solution") or {}
     conflicts = context.get("conflicts") or []
     history = context.get("historical_cases") or []
-    if any(term in text for term in ("root cause", "cause", "why")):
-        if not causes:
-            return "The backend did not return a ranked cause."
-        top = causes[0]
-        return f"Leading cause: {top.get('name', 'unavailable')} with a {top.get('score', 0)}% confidence/evidence score. {top.get('explanation', '')} Supporting evidence: {', '.join(top.get('evidence_ids', [])) or 'none returned'}."
-    if any(term in text for term in ("evidence", "signal", "proof")):
-        if not evidence:
-            return "The backend did not return evidence records."
-        return "Backend evidence: " + " ".join(
-            f"{item.get('id')}: {item.get('description', '')}" for item in evidence
-        )
-    if any(term in text for term in ("conflict", "noise", "contradict")):
-        if not conflicts:
-            return "The backend returned no conflicting signals for this investigation."
-        return "Conflicting signals returned by the backend: " + " ".join(
-            f"{item.get('id')}: {item.get('description', '')}" for item in conflicts
-        )
-    if any(term in text for term in ("solution", "action", "recommend", "next")):
-        plan = solution.get("plan") or []
-        return "Backend recommendation: " + " ".join(
-            f"{index + 1}. {step}" for index, step in enumerate(plan)
-        ) if plan else "The backend did not return a recommendation."
-    if any(term in text for term in ("historical", "rag", "similar", "previous")):
-        if not history:
-            return "The RAG retriever found no similar historical cases."
-        return "Retrieved historical cases: " + " ".join(
-            f"{item.get('case_id', 'unknown')} ({item.get('retrieval_score', 'score unavailable')}): {item.get('root_cause', 'root cause unavailable')}."
-            for item in history
-        )
-    if any(term in text for term in ("anomaly", "deviation", "metric")):
+    ready = context.get("ready", True)
+
+    if not ready or not anomaly:
         return (
-            f"Detected anomaly: {anomaly.get('metric', 'unavailable')} changed from "
+            "No active investigation data is currently loaded. "
+            "Please upload your business telemetry files (CSV, JSON, or ZIP) to begin root-cause analysis, "
+            "or ask about how the 8-stage investigation pipeline operates."
+        )
+
+    # Greetings / general assistant queries
+    if any(text.startswith(g) or text == g for g in ("hi", "hello", "hey", "greetings", "good morning", "good evening", "help", "who are you", "what can you do")):
+        top_name = causes[0].get("name", "identified root cause") if causes else "root cause"
+        return (
+            f"Hello! I am your ABPI (Pygenic Arc) Root-Cause Analysis Assistant. "
+            f"I have analyzed the current incident regarding '{anomaly.get('metric', 'the metric')}' "
+            f"({anomaly.get('deviation_percent', '')}% deviation). The leading root cause is {top_name}. "
+            f"You can ask me about the anomaly details, evidence trail, ranked causes, conflicting signals, recommended solutions, or historical cases."
+        )
+
+    # Overview / Summary / What happened
+    if any(term in text for term in ("summary", "overview", "what happened", "findings", "explain", "report", "conclusion", "status", "tell me about")):
+        top = causes[0] if causes else {}
+        top_cause_str = f"Leading cause: {top.get('name', 'N/A')} ({top.get('score', 0)}% confidence). " if top else ""
+        plan_str = f"Recommended action: {solution.get('plan', [''])[0]}" if solution.get('plan') else ""
+        return (
+            f"Investigation Summary: Detected a {anomaly.get('severity', 'high')} anomaly in {anomaly.get('metric', 'KPI')} "
+            f"(baseline {anomaly.get('baseline', 'N/A')} → current {anomaly.get('current', 'N/A')}, {anomaly.get('deviation_percent', 'N/A')}% deviation). "
+            f"{top_cause_str}"
+            f"Identified {len(evidence)} supporting evidence signal(s) and {len(conflicts)} conflicting signal(s). "
+            f"{plan_str}"
+        )
+
+    # Root cause & Why
+    if any(term in text for term in ("root cause", "cause", "why", "reason", "culprit", "blame", "source of problem")):
+        if not causes:
+            return "The backend did not produce a ranked root cause for this dataset."
+        top = causes[0]
+        other_causes = [f"{c.get('name')} ({c.get('score')}%)" for c in causes[1:3]]
+        others_str = f" Alternative hypotheses considered: {', '.join(other_causes)}." if other_causes else ""
+        return (
+            f"Leading Root Cause: {top.get('name', 'unavailable')} with a {top.get('score', 0)}% confidence/evidence score. "
+            f"{top.get('explanation', '')} "
+            f"Supporting evidence IDs: {', '.join(top.get('evidence_ids', [])) or 'None'}.{others_str}"
+        )
+
+    # Evidence & signals
+    if any(term in text for term in ("evidence", "signal", "proof", "log", "metrics", "data", "records")):
+        if not evidence:
+            return "The backend did not return evidence records for this incident."
+        evidence_summary = " | ".join(
+            f"[{item.get('id')}]: {item.get('description', '')} ({item.get('severity', 'info')} severity)"
+            for item in evidence[:5]
+        )
+        return f"Investigation Evidence Trail ({len(evidence)} total signals):\n{evidence_summary}"
+
+    # Conflicts & Noise
+    if any(term in text for term in ("conflict", "noise", "contradict", "discrepancy", "unreliable")):
+        if not conflicts:
+            return "No conflicting or noisy signals were detected in this investigation."
+        conflict_items = " | ".join(
+            f"[{item.get('id')}]: {item.get('description', '')}"
+            for item in conflicts
+        )
+        return f"Conflicting Signals Identified ({len(conflicts)} items down-weighted to prevent bias):\n{conflict_items}"
+
+    # Solution, Fix, Recommendation, Plan, Mitigation
+    if any(term in text for term in ("solution", "action", "recommend", "plan", "fix", "mitigate", "step", "next", "resolve", "how to solve")):
+        plan = solution.get("plan") or []
+        if not plan:
+            return "The backend did not return an automated recommendation plan."
+        steps = " ".join(f"{index + 1}. {step}" for index, step in enumerate(plan))
+        disclaimer = solution.get("disclaimer", "Human approval required prior to execution.")
+        return f"Recommended Action Plan: {steps} ({disclaimer})"
+
+    # Historical cases & RAG
+    if any(term in text for term in ("historical", "rag", "similar", "past", "previous", "history", "memory")):
+        if not history:
+            return "The RAG retriever found no sufficiently similar historical cases in the memory store."
+        cases = " | ".join(
+            f"{item.get('case_id', 'unknown')} (similarity {item.get('retrieval_score', 'N/A')}): {item.get('problem', '')} -> {item.get('root_cause', '')}"
+            for item in history[:3]
+        )
+        return f"Retrieved Historical Incident Matches:\n{cases}"
+
+    # Anomaly / Metrics / Baseline / Deviation
+    if any(term in text for term in ("anomaly", "deviation", "baseline", "current", "drop", "spike", "increase", "decrease", "metric", "severity")):
+        return (
+            f"Detected Anomaly: {anomaly.get('metric', 'unavailable')} shifted from baseline "
             f"{anomaly.get('baseline', 'unavailable')} to {anomaly.get('current', 'unavailable')} "
             f"({anomaly.get('deviation_percent', 'unavailable')}% deviation). "
-            f"Severity: {anomaly.get('severity', 'unavailable')}."
+            f"Severity assessment: {anomaly.get('severity', 'unavailable')}. Description: {anomaly.get('description', '')}"
         )
+
+    # Verification / Decision / Approval
+    if any(term in text for term in ("verify", "decision", "approve", "reject", "human", "gate", "feedback")):
+        return (
+            "Human Verification Gate: All AI recommendations are advisory and require human approval. "
+            "You can review the evidence in the Verification tab and click 'Approve & save history' or 'Reject' to update the local memory loop."
+        )
+
+    # Intelligent fallback with key facts
+    top = causes[0] if causes else {}
+    top_name = top.get('name', 'identified root cause')
     return (
-        "I can answer questions about the backend report's anomaly, evidence, "
-        "conflicts, ranked causes, recommendations, or retrieved historical cases. "
-        "Ask about one of those items."
+        f"I can answer any question about this investigation. Currently analyzing {anomaly.get('metric', 'KPI')} "
+        f"({anomaly.get('deviation_percent', '')}% deviation, top cause: {top_name}). "
+        f"Try asking: 'What is the root cause?', 'Show the evidence', 'What is the recommended action plan?', or 'Summarize the investigation'."
     )
 
 
@@ -534,10 +601,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(422, {"error": "question is required"})
                 return
             if not report.get("ready"):
-                self._send(422, report)
+                answer = grounded_local_answer(question, body.get("context") or report)
+                self._send(200, {
+                    "answer": answer,
+                    "powered_by": "deterministic_backend",
+                    "grounded_in": "system",
+                })
                 return
             if os.environ.get("CHAT_PROVIDER", "deterministic").strip().lower() != "gemini":
-                answer = grounded_local_answer(question, report)
+                answer = grounded_local_answer(question, body.get("context") or report)
                 self._send(200, {
                     "answer": answer,
                     "powered_by": "deterministic_backend",
@@ -545,9 +617,9 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
             try:
-                answer, powered_by_gemini = gemini_answer(question, body.get("context", report))
+                answer, powered_by_gemini = gemini_answer(question, body.get("context") or report)
             except RuntimeError as error:
-                answer = grounded_local_answer(question, report)
+                answer = grounded_local_answer(question, body.get("context") or report)
                 self._send(200, {
                     "answer": answer,
                     "powered_by": "deterministic_backend",

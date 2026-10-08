@@ -265,12 +265,31 @@ function App() {
     setChatInput("");
     setChatLoading(true);
     try {
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, context: { anomaly: data.anomaly, evidence: data.evidence, causes: data.causes, solution: data.solution, historical_cases: data.historical_cases, browser_history: data.browserHistory } }) });
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          context: data ? {
+            anomaly: data.anomaly,
+            evidence: data.evidence,
+            causes: data.causes,
+            conflicts: data.conflicts,
+            solution: data.solution,
+            historical_cases: data.historical_cases,
+            browser_history: data.browserHistory,
+            ready: data.ready,
+          } : {},
+        }),
+      });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || `Assistant request failed (HTTP ${response.status})`);
-      setChatMessages((messages) => [...messages, { role: "bot", text: result.answer }]);
-    } catch (error) { setChatMessages((messages) => [...messages, { role: "bot", text: `Assistant error: ${error.message}` }]); }
-    finally { setChatLoading(false); }
+      setChatMessages((messages) => [...messages, { role: "bot", text: result.answer || "I received your query but could not generate a response." }]);
+    } catch (error) {
+      setChatMessages((messages) => [...messages, { role: "bot", text: `Assistant: ${error.message || "Failed to communicate with investigation service."}` }]);
+    } finally {
+      setChatLoading(false);
+    }
   };
   const upload = async (event) => {
     const file = event.target.files?.[0];
