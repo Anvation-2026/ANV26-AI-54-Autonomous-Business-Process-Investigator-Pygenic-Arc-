@@ -666,8 +666,6 @@ standard library. Optional production integrations can replace the providers
 without changing the API contract.
 """
 
-from __future__ import annotations
-
 import json
 import math
 import mimetypes
