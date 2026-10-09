@@ -1320,12 +1320,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *_args: object) -> None:
         print(f"[backend] {self.command} {self.path}", flush=True)
+        
+if name == "main": 
+    threading.Thread(
+        target=monitor_loop,
+        daemon=True,
+        name="incoming-monitor"
+    ).start()
 
-if name == "main": threading.Thread(target=monitor_loop, daemon=True, name="incoming-monitor").start()
+port = int(os.environ.get("PORT", 8000)) 
+server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
 
-port = int(os.environ.get("PORT", 8000)) server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-
-print(f"Pygenic Arc running on port {port}", flush=True) server.serve_forever()
+print(f"Pygenic Arc running on port {port}", flush=True) 
+server.serve_forever()
 
 
 
